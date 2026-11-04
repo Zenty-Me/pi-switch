@@ -35,10 +35,12 @@ function setup() {
   const store = new ProposalStore();
   let loads = 0;
   let notices = 0;
-  const tool = createCapabilitiesTool({ store, load: async () => { loads++; return structuredClone(base); }, status() {} });
+  const tool = createCapabilitiesTool({ store, load: async () => { loads++; return structuredClone(base); }, status() {},
+    applied() {} });
   const ctx = {
     cwd: root, mode: "tui", isProjectTrusted: () => true,
-    sessionManager: { getSessionId: () => "session-one" },
+    sessionManager: { getSessionId: () => "session-one",
+      getBranch: () => [{ id: "proposal-user", type: "message", message: { role: "user", content: "用户消息" } }] },
     ui: { notify() { notices++; } },
   } as unknown as ExtensionToolContext;
   const run = async (args: Parameters<typeof tool.execute>[1], signal?: AbortSignal) => {
@@ -111,7 +113,7 @@ test("invalid, duplicated, readonly or reasonless proposals reject the entire ba
     await assert.rejects(f.run({ action: "stage", changes: [valid, invalid] }));
     assert.equal((await f.pending()).rows[0].state, "inherit");
   }
-  await assert.rejects(f.run({ action: "save" }), /只支持 list 和 stage/);
+  await assert.rejects(f.run({ action: "save" }), /只支持 list、stage 和 apply/);
 });
 
 test("pagination and kind/query/pending filters are explicit and bounded", async () => {

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { assertProjectUnchanged, dirtyRows, effectiveEnabled, resourceGroup, savedEnabled,
   type Override, type ProjectModel, type ResourceRow } from "./model.ts";
 
@@ -46,12 +46,35 @@ export function stageChanges(model: ProjectModel, changes: ProposedChange[]): vo
   }
 }
 
-/** Drafts are session-local and never persisted by model-facing tools. */
+/** Only a fingerprint of configuration inputs may be carried across automatic reloads. */
+export function projectFingerprint(model: ProjectModel): string {
+  return createHash("sha256").update(JSON.stringify(
+    [model.settings, model.mcp, model.globalSettings, model.globalMcp].map((file) => [file.path, file.text]),
+  )).digest("hex");
+}
+
+/** Drafts belong to the current project, session and proposal revision. */
 export class ProposalStore {
   private model?: ProjectModel;
   private owner?: string;
+  private revision?: { id: string; userMessageId?: string };
 
-  clear(): void { this.model = undefined; this.owner = undefined; }
+  get proposalId(): string | undefined { return this.revision?.id; }
+
+  clear(): void { this.model = undefined; this.owner = undefined; this.revision = undefined; }
+
+  revise(userMessageId?: string, proposalId: string = randomUUID()): void {
+    this.revision = this.model && dirtyRows(this.model).length ? { id: proposalId, userMessageId } : undefined;
+  }
+
+  assertConfirmation(proposalId: string | undefined, userMessageId: string | undefined): void {
+    if (!proposalId || proposalId !== this.revision?.id) {
+      throw new Error("方案版本无效或已过期，请重新 list 查看当前建议并等待用户确认。");
+    }
+    if (!userMessageId || !this.revision.userMessageId || userMessageId === this.revision.userMessageId) {
+      throw new Error("请先展示建议，等待用户在后续消息中明确确认后再 apply；不能在同一轮暂存并应用。");
+    }
+  }
 
   async get(owner: string, load: () => Promise<ProjectModel>): Promise<ProjectModel> {
     if (owner !== this.owner) this.clear();

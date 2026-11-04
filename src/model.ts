@@ -291,8 +291,8 @@ function commitConfigs(writes: { file: ConfigFile; data: JsonObject }[]): void {
 export function assertProjectUnchanged(model: ProjectModel): void {
   for (const file of [model.settings, model.mcp, model.globalSettings, model.globalMcp]) assertUnchanged(file);
 }
-export function saveProject(model: ProjectModel): boolean {
-  const changes = dirtyRows(model);
+export function saveProject(model: ProjectModel, selectedIds?: ReadonlySet<string>): boolean {
+  const changes = dirtyRows(model).filter((row) => !selectedIds || selectedIds.has(row.id));
   if (!changes.length) return false;
   const settings = structuredClone(model.settings.data);
   const mcp = structuredClone(model.mcp.data);
@@ -307,5 +307,13 @@ export function saveProject(model: ProjectModel): boolean {
   if (changes.some((row) => row.kind === "skill")) writes.push({ file: model.settings, data: settings });
   if (changes.some((row) => row.kind === "mcp")) writes.push({ file: model.mcp, data: mcp });
   commitConfigs(writes);
+  for (const { file, data } of writes) {
+    file.text = serializeConfig(file, data);
+    file.data = data;
+  }
+  for (const row of changes) {
+    row.initial = row.state;
+    row.reason = undefined;
+  }
   return true;
 }

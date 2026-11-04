@@ -26,7 +26,7 @@ test("Pi's native extension loader registers the panel and tool without local no
 });
 
 for (const decision of ["save", "cancel"] as const) {
-  test(`conversation → proposal → panel ${decision}: only user save writes files and reloads`, async () => {
+  test(`conversation → proposal → panel ${decision}: manual review preserves save and cancel behavior`, async () => {
     const root = mkdtempSync(join(tmpdir(), "pi-capabilities-workflow-"));
     const agent = join(root, "agent");
     const cwd = join(root, "project");

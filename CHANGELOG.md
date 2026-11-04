@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- Add conversational apply: stage a proposal, show it, then save after explicit user confirmation in a later message, without opening the panel.
+- Bind apply to the latest proposal revision, support confirmed subsets, and reject stale proposals after configuration changes.
+- Schedule reload once the response has finished; restore remaining suggestions after partial application using metadata and a configuration fingerprint.
+- Preserve manual panel workflows and report saved changes separately from reload failures.
+- Add native Skill loading, confirmation-boundary, partial application and reload regression tests.
+
 ## [0.4.0]
 
 - Rename the plugin and repository to **Pi Switch** (`pi-switch`), with the Chinese display name “能力开关”.
