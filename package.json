@@ -1,0 +1,31 @@
+{
+  "name": "pi-project-capabilities",
+  "version": "0.1.0",
+  "description": "Project-local Skills and native MCP switches for Pi",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zenty-Me/pi-project-capabilities.git"
+  },
+  "homepage": "https://github.com/Zenty-Me/pi-project-capabilities#readme",
+  "bugs": { "url": "https://github.com/Zenty-Me/pi-project-capabilities/issues" },
+  "keywords": ["pi-package", "pi-extension", "skills", "mcp"],
+  "files": ["src", "README.md", "LICENSE"],
+  "pi": { "extensions": ["./src/index.ts"] },
+  "engines": { "node": ">=22.19.0" },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.5.0 <2",
+    "@earendil-works/pi-tui": ">=1.5.0 <2"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true },
+    "@earendil-works/pi-tui": { "optional": true }
+  },
+  "devDependencies": { "@types/node": "^24.0.0", "typescript": "^5.9.3" },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-isolation=none --test-reporter=spec test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  }
+}
