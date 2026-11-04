@@ -391,12 +391,12 @@ export class CapabilitiesPanel implements Component, Focusable {
   render(width: number): string[] {
     this.resetLayout();
     const height = Math.max(4, Math.floor(this.tui.terminal.rows * 0.95));
-    if (width < 40 || height < 18) return this.frame(["项目能力", "请扩大终端至至少 40 列、20 行。", "Ctrl+S 保存 · Esc 关闭"].slice(0, height - 2), width);
+    if (width < 40 || height < 18) return this.frame(["能力开关", "请扩大终端至至少 40 列、20 行。", "Ctrl+S 保存 · Esc 关闭"].slice(0, height - 2), width);
     if (this.sheet) return this.renderSheet(width, height);
     const inner = width - 4;
     const pending = dirtyRows(this.model).length;
     const all = this.model.rows.filter((row) => row.kind === this.tab);
-    const title = this.theme.bold("项目能力") + this.theme.fg("muted", `  ${text(basename(this.model.cwd.replace(/\\/g, "/")))}`);
+    const title = this.theme.bold("能力开关") + this.theme.fg("muted", `  ${text(basename(this.model.cwd.replace(/\\/g, "/")))}`);
     const badge = this.theme.fg(pending ? "warning" : "dim", pending ? `${pending} 项待保存` : "未修改");
     const lines = [this.heading(title, badge, inner), this.theme.fg("dim", `仅影响本项目 · 开启 ${all.filter(effectiveEnabled).length} / ${all.length}`), ""];
     this.append(lines, this.buttons([

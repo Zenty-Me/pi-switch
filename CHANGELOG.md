@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0]
+
+- Rename the plugin and repository to **Pi Switch** (`pi-switch`), with the Chinese display name “能力开关”.
+- Replace the panel entry with `/switch` and the model-facing tool with `pi_switch`. No legacy command or tool aliases are registered.
+- Update installation links, prompts, status messages and package metadata to the new name.
+- Preserve the existing project configuration format and all enable/disable behavior.
+
 ## [0.3.0]
 
 - Redesign the panel with a source-grouped list and inline detail pane on wide terminals; retain a compact single-column layout in smaller windows.
@@ -11,7 +18,7 @@
 
 ## [0.2.0]
 
-- Add conversational curation through the current Pi model: `project_capabilities` lists safe resource metadata and stages reasoned proposals. Only the user-facing panel can save and reload.
+- Add conversational curation through the current Pi model: the model-facing tool lists safe resource metadata and stages reasoned proposals. Only the user-facing panel can save and reload.
 - Show source groups, all/project-overrides/pending filters, saved-versus-proposed settings and a scrollable detail view.
 - Add filtered batch enable/disable/inherit actions with counts; skip readonly entries and other tabs.
 - Separate row selection from checkbox toggling, and use measured mouse hit regions for every action.

@@ -71,7 +71,7 @@ test("model suggestions stage reasons only; unmentioned resources, disk and glob
   const payload = await f.run({ action: "stage", changes: [{ id, state: "off", reason: "此项目不使用 Next.js" }] });
   assert.equal(payload.saved, false);
   assert.equal(payload.pendingCount, 1);
-  assert.ok(payload.nextStep.includes("/project-capabilities"));
+  assert.ok(payload.nextStep.includes("/switch"));
   assert.equal(f.notices(), 1);
   const model = await f.pending();
   assert.equal(model.rows[0].state, "off");

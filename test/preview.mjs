@@ -25,7 +25,7 @@ const fixtures = [
 function svg(lines, width, colors, background) {
   const cells = new Intl.Segmenter("zh", { granularity: "grapheme" });
   const cw = 8.4; const ch = 22; const pad = 20;
-  const output = [`<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pi 项目能力面板原生渲染" width="${width * cw + pad * 2}" height="${lines.length * ch + pad * 2}"><rect width="100%" height="100%" fill="${background}"/>`];
+  const output = [`<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pi Switch 能力开关原生渲染" width="${width * cw + pad * 2}" height="${lines.length * ch + pad * 2}"><rect width="100%" height="100%" fill="${background}"/>`];
   lines.forEach((line, y) => {
     const state = { fg: colors.text, bg: undefined, bold: false };
     let x = 0;
@@ -58,7 +58,7 @@ function svg(lines, width, colors, background) {
 
 const cases = [["dark", 116, 34, "宽窗口 · 模型建议复核"], ["light", 116, 34, "浅色主题"],
   ["dark", 60, 24, "窄窗口 · 单栏"], ["dark", 100, 30, "批量操作菜单"]];
-const directory = join(tmpdir(), "pi-project-capabilities-preview");
+const directory = join(tmpdir(), "pi-switch-preview");
 mkdirSync(directory, { recursive: true });
 const screens = [];
 for (const [name, width, rows, label] of cases) {

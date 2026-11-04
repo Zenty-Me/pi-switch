@@ -4,18 +4,18 @@ import { CapabilitiesPanel, type PanelResult } from "./panel.ts";
 import { ProposalStore } from "./proposals.ts";
 import { createCapabilitiesTool } from "./tool.ts";
 
-const STATUS_KEY = "project-capabilities";
-const RECEIPT = "project-capabilities-save";
+const STATUS_KEY = "pi-switch";
+const RECEIPT = "pi-switch-save";
 
-export default function projectCapabilities(pi: ExtensionAPI): void {
+export default function piSwitch(pi: ExtensionAPI): void {
   const store = new ProposalStore();
   const status = (ctx: ExtensionContext, model?: ProjectModel) => {
     const count = model ? dirtyRows(model).length : 0;
-    ctx.ui.setStatus(STATUS_KEY, count ? `能力建议 ${count} 项待复核 · /project-capabilities` : undefined);
+    ctx.ui.setStatus(STATUS_KEY, count ? `能力开关 ${count} 项待复核 · /switch` : undefined);
   };
   const load = async (ctx: ExtensionContext) => {
     try { return await loadProject(ctx.cwd, getAgentDir(), pi.getMcpServers()); }
-    catch { throw new Error("无法读取项目能力配置，请检查 settings.json 和 mcp.json 的格式及读取权限。"); }
+    catch { throw new Error("无法读取项目开关配置，请检查 settings.json 和 mcp.json 的格式及读取权限。"); }
   };
   pi.registerTool(createCapabilitiesTool({ store, load, status }));
 
@@ -34,19 +34,19 @@ export default function projectCapabilities(pi: ExtensionAPI): void {
     ctx.ui.setStatus(STATUS_KEY, undefined);
   });
 
-  pi.registerCommand("project-capabilities", {
-    description: "复核模型建议，或手动管理当前项目 Skills / MCP 开关",
+  pi.registerCommand("switch", {
+    description: "能力开关：复核 AI 建议，管理本项目 Skills / MCP",
     handler: async (_args, ctx) => {
       if (ctx.mode !== "tui") {
-        ctx.ui.notify("请在 Pi 交互终端中运行 /project-capabilities", "warning");
+        ctx.ui.notify("请在 Pi 交互终端中运行 /switch", "warning");
         return;
       }
       if (!ctx.isProjectTrusted()) {
-        ctx.ui.notify("请先通过 Pi 的项目信任流程，再管理项目能力。", "warning");
+        ctx.ui.notify("请先通过 Pi 的项目信任流程，再打开能力开关。", "warning");
         return;
       }
       if (!ctx.isIdle()) {
-        ctx.ui.notify("请等待当前任务完成后再打开项目能力面板。", "info");
+        ctx.ui.notify("请等待当前任务完成后再打开能力开关。", "info");
         return;
       }
       try {
@@ -83,7 +83,7 @@ export default function projectCapabilities(pi: ExtensionAPI): void {
           mcp: changes.filter((row) => row.kind === "mcp").length });
       } catch (error) {
         ctx.ui.notify(error instanceof SyntaxError ? "配置 JSON 格式有误，请修复后重新打开面板。"
-          : error instanceof Error ? error.message : "无法保存项目能力配置。", "error");
+          : error instanceof Error ? error.message : "无法保存项目开关配置。", "error");
         return;
       }
       try {

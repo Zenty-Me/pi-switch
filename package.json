@@ -1,15 +1,15 @@
 {
-  "name": "pi-project-capabilities",
-  "version": "0.3.0",
-  "description": "Project-local Skills and MCP panel with conversational proposals and batch controls",
+  "name": "pi-switch",
+  "version": "0.4.0",
+  "description": "Pi Switch: project-local Skills and MCP switches with AI proposals",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Zenty-Me/pi-project-capabilities.git"
+    "url": "git+https://github.com/Zenty-Me/pi-switch.git"
   },
-  "homepage": "https://github.com/Zenty-Me/pi-project-capabilities#readme",
-  "bugs": { "url": "https://github.com/Zenty-Me/pi-project-capabilities/issues" },
+  "homepage": "https://github.com/Zenty-Me/pi-switch#readme",
+  "bugs": { "url": "https://github.com/Zenty-Me/pi-switch/issues" },
   "keywords": ["pi-package", "pi-extension", "skills", "mcp"],
   "files": ["src", "README.md", "LICENSE", "CHANGELOG.md"],
   "pi": { "extensions": ["./src/index.ts"] },

@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { discoverAndLoadExtensions, type ExtensionAPI, type ExtensionCommandContext,
   type RegisteredCommand, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import projectCapabilities from "../src/index.ts";
+import piSwitch from "../src/index.ts";
 import { createCapabilitiesTool } from "../src/tool.ts";
 import { CapabilitiesPanel, type PanelResult } from "../src/panel.ts";
 import { getKeybindings, type TUI } from "@earendil-works/pi-tui";
@@ -21,9 +21,8 @@ test("Pi's native extension loader registers the panel and tool without local no
   ], temporary, temporary);
   assert.deepEqual(result.errors, []);
   assert.equal(result.extensions.length, 1);
-  assert.ok(result.extensions[0].commands.has("project-capabilities"));
-  assert.equal(result.extensions[0].tools.size, 1);
-  assert.ok(result.extensions[0].tools.has("project_capabilities"));
+  assert.deepEqual([...result.extensions[0].commands.keys()], ["switch"]);
+  assert.deepEqual([...result.extensions[0].tools.keys()], ["pi_switch"]);
 });
 
 for (const decision of ["save", "cancel"] as const) {
@@ -57,7 +56,7 @@ for (const decision of ["save", "cancel"] as const) {
         appendEntry(customType: string, data: unknown) { entries.push({ type: "custom", customType, data }); },
         on(name: string, handler: (event: unknown, context: ExtensionContext) => void) { handlers.set(name, handler); },
       } as unknown as ExtensionAPI;
-      projectCapabilities(api);
+      piSwitch(api);
       const ctx = {
         cwd, mode: "tui", isProjectTrusted: () => true, isIdle: () => true,
         sessionManager: { getSessionId: () => "workflow-session", getBranch: () => entries },

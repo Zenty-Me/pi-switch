@@ -1,4 +1,4 @@
-# Pi 项目能力面板
+# Pi Switch · 能力开关
 
 通过终端面板，或先与 Pi 当前模型对话，为单独项目配置 Skills 和原生 MCP 开关。
 
@@ -9,25 +9,25 @@
 尚未发布到 npm，可以通过 GitHub 安装仓库中已推送的版本：
 
 ```bash
-pi install git:github.com/Zenty-Me/pi-project-capabilities
+pi install git:github.com/Zenty-Me/pi-switch
 ```
 
 该命令全局安装面板，方便各项目使用；面板里的开关始终只保存到当前项目。已打开的 Pi 会话执行 `/reload`，然后输入：
 
 ```text
-/project-capabilities
+/switch
 ```
 
 仅试用一次（不写安装设置）：
 
 ```bash
-pi -e git:github.com/Zenty-Me/pi-project-capabilities
+pi -e git:github.com/Zenty-Me/pi-switch
 ```
 
 只为当前项目安装插件：
 
 ```bash
-pi install --local git:github.com/Zenty-Me/pi-project-capabilities
+pi install --local git:github.com/Zenty-Me/pi-switch
 ```
 
 项目需要通过 Pi 原生信任流程。面板在 Pi 空闲时打开；对话建议由模型在当前任务中调用工具准备。
@@ -38,12 +38,12 @@ pi install --local git:github.com/Zenty-Me/pi-project-capabilities
 
 > 这是 Next.js + Supabase 项目，不涉及飞书和论文。帮我筛选 Skills 和 MCP：保留相关能力，给出禁用建议和理由，不确定的先不要动。只生成待确认方案。
 
-模型可以使用插件提供的 `project_capabilities` 工具：
+模型可以使用插件提供的 `pi_switch` 工具：
 
 1. `list`：分页读取资源名称、描述、来源分类和项目设置，不猜测资源 ID。
 2. `stage`：暂存带简短理由的建议。未提及的资源保持不变。
 3. 你继续说“GitHub 保留”“浏览器也会用”，模型可以修改已有建议。
-4. 任务结束后输入 `/project-capabilities`，查看“待保存”列表中的建议理由及原设置。
+4. 任务结束后输入 `/switch`，查看“待保存”列表中的建议理由及原设置。
 5. 你点击“保存”或按 Ctrl+S 后，才会写入项目配置并重新加载。
 
 **建议不等于应用。** 模型工具没有保存、重新加载或删除资源的操作，不会单靠对话中的“确认”写入配置。仍可在面板调整、撤销或放弃模型建议。这不是限制模型其他通用工具的安全沙箱；插件会明确指导模型不要绕过面板编辑配置。
@@ -100,20 +100,22 @@ pi install --local git:github.com/Zenty-Me/pi-project-capabilities
 
 ## 更新、迁移、卸载
 
+v0.4.0 统一改名为 **Pi Switch**，面板入口 `/switch`、模型工具 `pi_switch`，不保留旧命令或工具别名。旧版用户先用 `pi list` 查看并移除旧安装来源，再通过本页的新仓库地址安装，避免两份插件重复加载；已保存的项目开关不需要迁移。
+
 更新未固定版本的已安装插件：
 
 ```bash
 pi update --extensions
 ```
 
-新电脑安装 Pi 后，用相同 GitHub 命令安装插件即可。也可复制插件目录并运行 `pi install /path/to/pi-project-capabilities`；只需 `package.json`、`src/`、`README.md`、`LICENSE`，不用复制 `node_modules`，无需构建。
+新电脑安装 Pi 后，用相同 GitHub 命令安装插件即可。也可复制插件目录并运行 `pi install /path/to/pi-switch`；只需 `package.json`、`src/`、`README.md`、`LICENSE`，不用复制 `node_modules`，无需构建。
 
 Skills、MCP 服务和登录信息需在新电脑分别安装或配置。Skill 项目开关仍保存为 Pi 原生本机路径；目录不同需要在新电脑重新选择，当前不提供跨机器预设导入。
 
 卸载 GitHub 安装的插件：
 
 ```bash
-pi remove git:github.com/Zenty-Me/pi-project-capabilities
+pi remove git:github.com/Zenty-Me/pi-switch
 ```
 
 本地路径安装的插件使用原路径卸载。卸载后已保存的项目开关仍有效，可通过 `pi config --local` 和 `/mcp` 管理。
@@ -123,8 +125,8 @@ pi remove git:github.com/Zenty-Me/pi-project-capabilities
 建议使用 Node.js 24。克隆后安装开发依赖及仅供验证的宿主模块：
 
 ```bash
-git clone https://github.com/Zenty-Me/pi-project-capabilities.git
-cd pi-project-capabilities
+git clone https://github.com/Zenty-Me/pi-switch.git
+cd pi-switch
 npm ci --ignore-scripts
 npm install --no-save --package-lock=false @earendil-works/pi-coding-agent@1.5.0 @earendil-works/pi-tui@1.5.0 typebox
 npm run check

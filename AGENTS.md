@@ -14,7 +14,7 @@ Pi 1.5.x 扩展包，TypeScript，Node.js 22.19+。运行时依赖由 Pi 提供�
 
 ## 起前后端
 
-没有前后端服务。用 `pi -e /absolute/path/to/pi-project-capabilities` 加载，然后执行 `/project-capabilities`。
+没有前后端服务。用 `pi -e /absolute/path/to/pi-switch` 加载，然后执行 `/switch`。模型工具入口为 `pi_switch`；不注册旧命令或旧工具别名。
 
 ## 测试
 
