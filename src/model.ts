@@ -15,6 +15,8 @@ export interface ResourceRow {
   name: string;
   description: string;
   source: string;
+  group?: string;
+  reason?: string;
   state: Override;
   initial: Override;
   inheritedEnabled: boolean;
@@ -153,6 +155,8 @@ function skillRow(resource: ResolvedResource, model: ProjectModel): ResourceRow 
   return {
     id: `skill:${key(resource.path)}`, kind: "skill", ...info,
     source: `${resource.metadata.scope === "project" ? "项目" : "全局"} · ${resource.metadata.source}`,
+    group: resource.metadata.origin === "package" ? "扩展包 Skills"
+      : resource.metadata.scope === "project" ? "项目 Skills" : "全局 Skills",
     state, initial: state, inheritedEnabled: resource.enabled, editable: true,
     path: resource.path, packageSource, packageRoot,
   };
@@ -175,6 +179,7 @@ function mcpRows(model: ProjectModel, registered: RegisteredMcpServer[]): Resour
       id: `mcp:${name}`, kind: "mcp", name, description,
       source: editable ? (local && isDefinition(local) ? "项目 mcp.json" : "全局 mcp.json")
         : "扩展注册或缺失全局定义 · 请在来源扩展中管理",
+      group: !editable ? "只读 MCP" : local && isDefinition(local) ? "项目 MCP" : "全局 MCP",
       state, initial: state,
       inheritedEnabled: local && isDefinition(local) ? true : config?.enabled !== false,
       editable,
@@ -207,6 +212,12 @@ export async function loadProject(cwd: string, agentDir: string, registered: Reg
 
 export function effectiveEnabled(row: ResourceRow): boolean {
   return row.state === "inherit" ? row.inheritedEnabled : row.state === "on";
+}
+export function savedEnabled(row: ResourceRow): boolean {
+  return row.initial === "inherit" ? row.inheritedEnabled : row.initial === "on";
+}
+export function resourceGroup(row: ResourceRow): string {
+  return row.group ?? row.source;
 }
 export function dirtyRows(model: ProjectModel): ResourceRow[] {
   return model.rows.filter((row) => row.state !== row.initial);
@@ -277,6 +288,9 @@ function commitConfigs(writes: { file: ConfigFile; data: JsonObject }[]): void {
     }
   }
 }
+export function assertProjectUnchanged(model: ProjectModel): void {
+  for (const file of [model.settings, model.mcp, model.globalSettings, model.globalMcp]) assertUnchanged(file);
+}
 export function saveProject(model: ProjectModel): boolean {
   const changes = dirtyRows(model);
   if (!changes.length) return false;
@@ -288,7 +302,7 @@ export function saveProject(model: ProjectModel): boolean {
     else setMcpOverride(mcp, row);
   }
   // Check all inputs before either write. Global files are never written.
-  for (const file of [model.settings, model.mcp, model.globalSettings, model.globalMcp]) assertUnchanged(file);
+  assertProjectUnchanged(model);
   const writes = [];
   if (changes.some((row) => row.kind === "skill")) writes.push({ file: model.settings, data: settings });
   if (changes.some((row) => row.kind === "mcp")) writes.push({ file: model.mcp, data: mcp });
