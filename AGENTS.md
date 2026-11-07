@@ -7,9 +7,12 @@ Pi 1.5.x 扩展包，TypeScript，Node.js 22.19+。运行时依赖由 Pi 提供�
 ## 目录
 
 - `src/model.ts`：原生资源发现、项目覆盖和配置持久化。
-- `src/panel.ts`：Skills / MCP 交互面板。
+- `src/panel.ts`：当前项目、Skills/MCP、规则与模板的统一交互界面。
+- `src/workbench.ts`：界面操作循环、规则草稿、模板保存与项目统一保存。
 - `src/proposals.ts`：内存建议、方案版本、资源元数据白名单和会话隔离。
 - `src/tool.ts`：当前模型使用的 list / stage / apply 工具；先展示建议，用户在后续消息中明确确认后才能应用。
+- `src/presets.ts`：个人模板格式、按名称匹配资源、AGENTS.md 管理区块与初始化计划。
+- `src/preset-command.ts`：`/switch save`、`init`、`presets` 命令和可滚动的人工确认预览。
 - `test/`：宿主加载、对话确认与部分应用、自动重载恢复、面板保存、配置隔离和终端交互验证。
 
 ## 起前后端
@@ -22,4 +25,4 @@ Pi 1.5.x 扩展包，TypeScript，Node.js 22.19+。运行时依赖由 Pi 提供�
 
 ## env
 
-不需要 API Key。使用 Pi 的 `getAgentDir()` 和 `CONFIG_DIR_NAME`，不要硬编码用户目录。MCP 密钥保持在原有位置，项目覆盖只能修改启用状态。
+不需要 API Key。使用 Pi 的 `getAgentDir()` 和 `CONFIG_DIR_NAME`，不要硬编码用户目录。MCP 密钥保持在原有位置，项目覆盖只能修改启用状态。个人模板只允许资源名称/开关和经用户编辑的通用规则，不导出 Skill 正文或 MCP 连接/认证配置；初始化必须先完整预览，缺失或同名资源应失败关闭。AGENTS.md 只修改受管区块，须与资源配置一起完成冲突检测和普通 I/O 失败回滚。Skill 全文仅在本地只读 UI 中展示，不进入模型结果、模板或会话记录；界面草稿保存为模板不等于应用项目修改。

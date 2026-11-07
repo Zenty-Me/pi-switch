@@ -1,8 +1,9 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { dirtyRows, loadProject, saveProject, type ProjectModel } from "./model.ts";
-import { CapabilitiesPanel, type PanelResult } from "./panel.ts";
+import { dirtyRows, loadProject, type ProjectModel } from "./model.ts";
+import { openWorkbench, type SaveCounts } from "./workbench.ts";
 import { ProposalStore, projectFingerprint, resourceId, stageChanges, type ProposedChange } from "./proposals.ts";
 import { createCapabilitiesTool, latestUserMessageId } from "./tool.ts";
+import { presetCompletions, runPresetCommand } from "./preset-command.ts";
 
 const STATUS_KEY = "pi-switch";
 const RECEIPT = "pi-switch-save";
@@ -18,7 +19,7 @@ export default function piSwitch(pi: ExtensionAPI): void {
     try { return await loadProject(ctx.cwd, getAgentDir(), pi.getMcpServers()); }
     catch { throw new Error("无法读取项目开关配置，请检查 settings.json 和 mcp.json 的格式及读取权限。"); }
   };
-  const receipt = (ctx: ExtensionContext, model: ProjectModel, counts: { skills: number; mcp: number }) => {
+  const receipt = (ctx: ExtensionContext, model: ProjectModel, counts: SaveCounts) => {
     const pending = dirtyRows(model).map((row) => ({ id: resourceId(row), state: row.state, reason: row.reason! }));
     pi.appendEntry(RECEIPT, { status: "saved", ...counts, cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
@@ -39,12 +40,12 @@ export default function piSwitch(pi: ExtensionAPI): void {
     if (event.reason !== "reload") return;
     const last = ctx.sessionManager.getBranch().findLast((entry) => entry.type === "custom" && entry.customType === RECEIPT);
     if (last?.type !== "custom") return;
-    const data = last.data as { status?: string; skills?: number; mcp?: number;
+    const data = last.data as { status?: string; skills?: number; mcp?: number; rules?: number;
       cwd?: string; sessionId?: string; pending?: ProposedChange[]; fingerprint?: string;
       proposalId?: string; userMessageId?: string } | undefined;
     if (data?.status !== "saved" || typeof data.skills !== "number" || typeof data.mcp !== "number") return;
-    ctx.ui.notify(`已保存并重新加载项目配置：Skills ${data.skills} 项，MCP ${data.mcp} 项。MCP 连接请用 /mcp 检查。`, "info");
-    pi.appendEntry(RECEIPT, { status: "reloaded", skills: data.skills, mcp: data.mcp });
+    ctx.ui.notify(`已保存并重新加载项目配置：Skills ${data.skills} 项，MCP ${data.mcp} 项${data.rules ? "，通用规则已更新" : ""}。MCP 连接请用 /mcp 检查。`, "info");
+    pi.appendEntry(RECEIPT, { status: "reloaded", skills: data.skills, mcp: data.mcp, ...(data.rules ? { rules: data.rules } : {}) });
     if (!data.pending?.length || data.cwd !== ctx.cwd || data.sessionId !== ctx.sessionManager.getSessionId()
       || !ctx.isProjectTrusted()) return;
     try {
@@ -74,7 +75,8 @@ export default function piSwitch(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("switch", {
-    description: "能力开关：管理本项目 Skills / MCP，复核或保存建议",
+    description: "打开 Pi Switch 工作台：项目、Skills/MCP、规则和模板",
+    getArgumentCompletions: presetCompletions,
     handler: async (args, ctx) => {
       if (args.trim() === "--reload") {
         if (!ctx.isIdle()) {
@@ -102,33 +104,19 @@ export default function piSwitch(pi: ExtensionAPI): void {
         let model: ProjectModel;
         try { model = await store.get(owner, () => load(ctx)); }
         catch (error) { status(ctx); throw error; }
-        const result = await ctx.ui.custom<PanelResult>((tui, theme, kb, done) =>
-          new CapabilitiesPanel({ model, tui, theme, kb, done }), {
-            overlay: true,
-            overlayOptions: { width: "95%", maxHeight: "95%", anchor: "center" },
-          });
-        if (result !== "save") {
+        if (args.trim()) {
+          if (!await runPresetCommand(args, ctx, model)) return;
           store.clear();
-          ctx.ui.setStatus(STATUS_KEY, undefined);
+          status(ctx);
+          try { await ctx.reload(); return; }
+          catch { ctx.ui.notify("模板已保存到项目，但重新加载失败。请执行 /reload 或重启 Pi。", "error"); }
           return;
         }
-        if (!ctx.isIdle() || !ctx.isProjectTrusted()) {
-          status(ctx, model);
-          ctx.ui.notify("当前状态已改变，未保存；建议仍暂存，请空闲时重新打开面板。", "warning");
-          return;
-        }
-        const changes = dirtyRows(model);
-        if (!saveProject(model)) {
-          store.clear();
-          ctx.ui.setStatus(STATUS_KEY, undefined);
-          ctx.ui.notify("没有需要保存的修改。", "info");
-          return;
-        }
+        const result = await openWorkbench(ctx, model);
         store.clear();
         ctx.ui.setStatus(STATUS_KEY, undefined);
-        receipt(ctx, model, {
-          skills: changes.filter((row) => row.kind === "skill").length,
-          mcp: changes.filter((row) => row.kind === "mcp").length });
+        if (!result) return;
+        if (result !== "initialized") receipt(ctx, model, result);
       } catch (error) {
         ctx.ui.notify(error instanceof SyntaxError ? "配置 JSON 格式有误，请修复后重新打开面板。"
           : error instanceof Error ? error.message : "无法保存项目开关配置。", "error");

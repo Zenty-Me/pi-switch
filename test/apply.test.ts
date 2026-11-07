@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { setImmediate } from "node:timers/promises";
+import { compile } from "@earendil-works/pi-schema";
+import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
 import { DefaultPackageManager, SettingsManager, loadSkills, withFileMutationQueue,
   type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext,
   type ExtensionToolContext, type RegisteredCommand, type SessionEntry } from "@earendil-works/pi-coding-agent";
@@ -84,6 +86,16 @@ function fixture() {
     if (content.type !== "text") throw new Error("Expected text");
     return JSON.parse(content.text);
   };
+  const strictRun = async (args: JsonObject) => {
+    // Reproduce providers that require every advertised property, including irrelevant arguments.
+    const properties = tool.parameters.properties;
+    const arguments_ = { ...Object.fromEntries(Object.keys(properties).map((key) => [key, null])), ...args };
+    const parameters = { ...tool.parameters, required: Object.keys(properties) };
+    assert.equal(compile(parameters).check(arguments_), true, "all unused properties must accept null");
+    const validated = validateToolArguments(tool, { type: "toolCall", id: "strict-call", name: tool.name, arguments: arguments_ });
+    assert.deepEqual(validated, arguments_, "host validation must preserve null, false, zero and empty strings");
+    return run(validated);
+  };
   const stage = async () => {
     const list = await run({ action: "list", query: "fixture-" });
     const selected = (list.items as ListedItem[]).filter((row) => row.name !== "fixture-sibling");
@@ -109,7 +121,7 @@ function fixture() {
     assert.equal(readFileSync(globalSettings, "utf8"), originalSettings);
     assert.equal(readFileSync(globalMcp, "utf8"), originalMcp);
   };
-  return { agent, ctx, run, user, stage, settle, flushReload, nativeSkill, assertGlobals,
+  return { agent, ctx, run, strictRun, user, stage, settle, flushReload, nativeSkill, assertGlobals,
     settings, mcp, entries, notifications, dispatches, statuses, reloads: () => reloads,
     setReloadFailure() { failReload = true; } };
 }
@@ -124,6 +136,53 @@ async function withFixture(run: (f: ReturnType<typeof fixture>) => Promise<void>
     else process.env.PI_CODING_AGENT_DIR = oldAgent;
   }
 }
+
+test("required nullable arguments support list, stage and confirmed full apply through native validation", () => withFixture(async (f) => {
+  const list = await f.strictRun({ action: "list", query: "", kind: "skill", pendingOnly: false, offset: 0, limit: 1 });
+  assert.equal(list.items.length, 1);
+  assert.equal(list.offset, 0);
+  assert.equal(list.nextOffset, 1);
+  assert.equal(list.pendingCount, 0);
+  const all = await f.strictRun({ action: "list", query: "fixture-" });
+  assert.equal(all.total, 3);
+  const proposal = await f.strictRun({ action: "stage", changes: all.items.map((row: ListedItem) => ({
+    id: row.id, state: "off", reason: "本项目无需此能力",
+  })) });
+  assert.equal(proposal.pendingCount, 3);
+  assert.equal(existsSync(f.settings), false);
+  assert.equal(existsSync(f.mcp), false);
+  await assert.rejects(f.strictRun({ action: "apply", proposalId: proposal.proposalId }), /后续消息/);
+  f.user();
+  const result = await f.strictRun({ action: "apply", proposalId: proposal.proposalId });
+  assert.equal(result.saved, true);
+  assert.equal(result.appliedCount, 3);
+  assert.equal(result.pendingCount, 0);
+  assert.equal(await f.nativeSkill("fixture-ai"), false);
+  assert.equal(await f.nativeSkill("fixture-sibling"), false);
+  assert.equal(JSON.parse(readFileSync(f.mcp, "utf8")).mcpServers["fixture-docs"].enabled, false);
+  await f.settle();
+  await f.flushReload();
+  assert.equal(f.reloads(), 1);
+}));
+
+test("nullable arguments preserve partial apply and reject actual unrelated values", () => withFixture(async (f) => {
+  const proposal = await f.stage();
+  const id = proposal.preview[0].id;
+  await assert.rejects(f.strictRun({ action: "list", ids: [id] }), /list 只读取清单/);
+  await assert.rejects(f.strictRun({ action: "stage", changes: [{ id, state: "off", reason: "建议" }],
+    proposalId: proposal.proposalId }), /stage 不接受/);
+  f.user();
+  const unrelated: JsonObject[] = [{ query: "" }, { pendingOnly: false }, { offset: 0 }, { kind: "skill" }, { limit: 1 },
+    { changes: [{ id, state: "on", reason: "未确认的新修改" }] }];
+  for (const args of unrelated) {
+    await assert.rejects(f.strictRun({ action: "apply", proposalId: proposal.proposalId, ...args }), /apply 只接受/);
+  }
+  assert.equal(existsSync(f.settings), false);
+  assert.equal(existsSync(f.mcp), false);
+  const partial = await f.strictRun({ action: "apply", proposalId: proposal.proposalId, ids: [id] });
+  assert.equal(partial.appliedCount, 1);
+  assert.equal(partial.pendingCount, 1);
+}));
 
 test("stage waits for a later user message; confirmation saves and schedules exactly one idle reload", () => withFixture(async (f) => {
   const proposal = await f.stage();

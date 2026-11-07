@@ -26,9 +26,15 @@ export interface ResourceRow {
   packageSource?: string;
   packageRoot?: string;
 }
-interface ConfigFile {
+export interface FileSnapshot {
   path: string;
   text: string | undefined;
+}
+export interface FileWrite {
+  file: FileSnapshot;
+  text: string;
+}
+interface ConfigFile extends FileSnapshot {
   data: JsonObject;
 }
 export interface ProjectModel {
@@ -248,7 +254,7 @@ export function setMcpOverride(data: JsonObject, row: ResourceRow): void {
   if (Object.keys(entries).length) data.mcpServers = entries;
   else delete data.mcpServers;
 }
-function assertUnchanged(file: ConfigFile): void {
+export function assertUnchanged(file: FileSnapshot): void {
   const current = existsSync(file.path) ? readFileSync(file.path, "utf8") : undefined;
   if (current !== file.text) throw new Error(`${file.path} 已被修改，请关闭并重新打开面板`);
 }
@@ -256,16 +262,17 @@ function serializeConfig(file: ConfigFile, data: JsonObject): string {
   const indent = file.text?.match(/^([ \t]+)\S/m)?.[1] ?? "  ";
   return `${JSON.stringify(data, null, indent)}\n`;
 }
-function commitConfigs(writes: { file: ConfigFile; data: JsonObject }[]): void {
-  const staged: { file: ConfigFile; temporary: string }[] = [];
-  const committed: ConfigFile[] = [];
+export function commitFiles(writes: FileWrite[]): void {
+  for (const { file } of writes) assertUnchanged(file);
+  const staged: { file: FileSnapshot; temporary: string }[] = [];
+  const committed: FileSnapshot[] = [];
   try {
-    for (const { file, data } of writes) {
+    for (const { file, text } of writes) {
       mkdirSync(dirname(file.path), { recursive: true });
       const temporary = `${file.path}.${randomUUID()}.tmp`;
       staged.push({ file, temporary });
       const mode = file.text === undefined ? 0o600 : statSync(file.path).mode;
-      writeFileSync(temporary, serializeConfig(file, data), { mode, flag: "wx" });
+      writeFileSync(temporary, text, { mode, flag: "wx" });
     }
     for (const { file, temporary } of staged) {
       assertUnchanged(file);
@@ -281,7 +288,7 @@ function commitConfigs(writes: { file: ConfigFile; data: JsonObject }[]): void {
       } catch { restored = false; }
     }
     throw new Error(restored ? "保存失败，已恢复原配置。请检查文件权限或重新打开面板。"
-      : "保存失败且部分配置未能恢复，请检查项目 settings.json 和 mcp.json 后执行 /reload。");
+      : "保存失败且部分文件未能恢复，请检查项目文件后执行 /reload。");
   } finally {
     for (const { temporary } of staged) {
       try { if (existsSync(temporary)) unlinkSync(temporary); } catch { /* A leftover temp file is inactive. */ }
@@ -291,9 +298,10 @@ function commitConfigs(writes: { file: ConfigFile; data: JsonObject }[]): void {
 export function assertProjectUnchanged(model: ProjectModel): void {
   for (const file of [model.settings, model.mcp, model.globalSettings, model.globalMcp]) assertUnchanged(file);
 }
-export function saveProject(model: ProjectModel, selectedIds?: ReadonlySet<string>): boolean {
+export function saveProject(model: ProjectModel, selectedIds?: ReadonlySet<string>, extraWrites: FileWrite[] = []): boolean {
   const changes = dirtyRows(model).filter((row) => !selectedIds || selectedIds.has(row.id));
-  if (!changes.length) return false;
+  const extras = extraWrites.filter(({ file, text }) => file.text !== text);
+  if (!changes.length && !extras.length) return false;
   const settings = structuredClone(model.settings.data);
   const mcp = structuredClone(model.mcp.data);
   for (const row of changes) {
@@ -306,7 +314,7 @@ export function saveProject(model: ProjectModel, selectedIds?: ReadonlySet<strin
   const writes = [];
   if (changes.some((row) => row.kind === "skill")) writes.push({ file: model.settings, data: settings });
   if (changes.some((row) => row.kind === "mcp")) writes.push({ file: model.mcp, data: mcp });
-  commitConfigs(writes);
+  commitFiles([...writes.map(({ file, data }) => ({ file, text: serializeConfig(file, data) })), ...extras]);
   for (const { file, data } of writes) {
     file.text = serializeConfig(file, data);
     file.data = data;

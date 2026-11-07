@@ -1,7 +1,22 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0]
 
+- Refine the workbench with responsive sidebar navigation, project summaries, distinct action surfaces, and template cards with availability and resource counts.
+- Render shared rules and template descriptions with native Markdown; verify sidebar hit coordinates, scroll isolation, card paging, and compact layouts.
+
+- Turn `/switch` into a unified project workbench with project overview, Skills/MCP, shared rules, and templates; keep existing command shortcuts.
+- Add read-only Skill and AGENTS.md viewers, template inspection and availability diagnostics, rule drafts, and mouse/keyboard confirmation controls.
+- Let users save current UI drafts as a template without applying them to the project, and save resource switches and shared rules together.
+- Cover button-driven workflows, draft preservation, cancellation, rule conflicts, keyboard paths, and narrow layouts.
+
+- Add named project initialization presets: `/switch save`, `/switch init`, and `/switch presets`, with editable shared rules and a scrollable confirmation preview.
+- Capture Skills and native MCP enabled states by name without exporting paths, Skill bodies, MCP connection settings, or credentials; reject missing, ambiguous, and read-only matches.
+- Apply AGENTS.md managed blocks together with native project settings, preserving project prose and supporting conflict checks, idempotent reapplication, and rollback on ordinary write failures.
+- Add preset round-trip, command, native loading, cancellation, schema, conflict, and rollback coverage.
+
+- Fix argument validation for providers that require every tool property: unused arguments explicitly accept null, while action-specific checks still reject unrelated values.
+- Add provider-shaped list, stage, full/partial apply, native argument validation and confirmation-boundary regression coverage.
 - Add conversational apply: stage a proposal, show it, then save after explicit user confirmation in a later message, without opening the panel.
 - Bind apply to the latest proposal revision, support confirmed subsets, and reject stale proposals after configuration changes.
 - Schedule reload once the response has finished; restore remaining suggestions after partial application using metadata and a configuration fingerprint.

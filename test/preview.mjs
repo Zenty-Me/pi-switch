@@ -25,7 +25,7 @@ const fixtures = [
 function svg(lines, width, colors, background) {
   const cells = new Intl.Segmenter("zh", { granularity: "grapheme" });
   const cw = 8.4; const ch = 22; const pad = 20;
-  const output = [`<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pi Switch 能力开关原生渲染" width="${width * cw + pad * 2}" height="${lines.length * ch + pad * 2}"><rect width="100%" height="100%" fill="${background}"/>`];
+  const output = [`<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" role="img" aria-label="Pi Switch 能力开关原生渲染" width="${width * cw + pad * 2}" height="${lines.length * ch + pad * 2}"><rect width="100%" height="100%" fill="${background}"/>`];
   lines.forEach((line, y) => {
     const state = { fg: colors.text, bg: undefined, bold: false };
     let x = 0;
@@ -56,33 +56,59 @@ function svg(lines, width, colors, background) {
   return output.join("") + "</svg>";
 }
 
-const cases = [["dark", 116, 34, "宽窗口 · 模型建议复核"], ["light", 116, 34, "浅色主题"],
-  ["dark", 60, 24, "窄窗口 · 单栏"], ["dark", 100, 30, "批量操作菜单"]];
+const cases = [
+  { id: "overview", name: "dark", width: 144, rows: 38, label: "当前项目 · 侧边导航", page: "overview" },
+  { id: "resources", name: "dark", width: 144, rows: 38, label: "能力配置 · 三栏", page: "resources" },
+  { id: "rules", name: "dark", width: 144, rows: 38, label: "项目规则 · Markdown", page: "rules" },
+  { id: "presets", name: "dark", width: 144, rows: 38, label: "模板库 · 配置组合", page: "presets" },
+  { id: "light", name: "light", width: 144, rows: 38, label: "浅色主题", page: "resources" },
+  { id: "narrow", name: "dark", width: 60, rows: 24, label: "窄窗口 · 单栏", page: "resources" },
+  { id: "small-presets", name: "dark", width: 40, rows: 20, label: "最小窗口 · 模板", page: "presets" },
+  { id: "batch", name: "dark", width: 100, rows: 30, label: "批量操作菜单", page: "resources" },
+];
 const directory = join(tmpdir(), "pi-switch-preview");
 mkdirSync(directory, { recursive: true });
 const screens = [];
-for (const [name, width, rows, label] of cases) {
+for (const { id, name, width, rows, label, page } of cases) {
   const theme = loadThemeFromPath(join(hostTheme, `${name}.json`), "truecolor");
   const colors = getResolvedThemeColors(name);
   const file = { path: "fixture.json", text: undefined, data: {} };
   const model = { cwd: "D:/projects/web-console", settings: file, mcp: file, globalSettings: file, globalMcp: file,
     rows: [...structuredClone(fixtures), { id: "mcp:github", kind: "mcp", name: "github", description: "管理 PR 与 Issue。",
       source: "全局 mcp.json", group: "全局 MCP", initial: "inherit", state: "inherit", editable: true, inheritedEnabled: true }] };
-  const panel = new CapabilitiesPanel({ model, theme, tui: { terminal: { rows }, requestRender() {} }, kb: getKeybindings(), done() {} });
-  panel.handleInput("\x1bOQ"); // pending → all
+  const sharedRules = "# 通用开发约定\n\n先阅读项目现有实现，沿用目录结构与命名。\n\n## 交付检查\n\n- 修改后执行 `npm run check`。\n- 报告测试结果和未验证的部分。\n- 对外发布前展示可审阅的结果。\n\n> 每个项目的专属说明保留在 AGENTS.md 的其他区域。";
+  const workspace = {
+    rules: { file: { path: "AGENTS.md", text: "# Web Console\n\n项目专属构建说明。" }, override: { path: "AGENTS.override.md", text: undefined },
+      initial: "", value: page === "rules" ? sharedRules : "" },
+    presets: [
+      { name: "research", preset: { version: 1, resources: [{ kind: "skill", name: "paper-review", enabled: true }], agentsMd: "引用原始来源，区分事实和推断。" } },
+      { name: "web-dev", preset: { version: 1, resources: [{ kind: "skill", name: "nextjs", enabled: true }, { kind: "skill", name: "supabase", enabled: true }, { kind: "mcp", name: "github", enabled: true }], agentsMd: sharedRules } },
+      { name: "writing", preset: { version: 1, resources: [{ kind: "skill", name: "missing-writing", enabled: true }], agentsMd: "先列出读者需要的信息，再组织段落。" } },
+    ],
+  };
+  if (page === "presets" || page === "overview") {
+    for (const row of model.rows) { row.initial = row.state; row.reason = undefined; }
+  }
+  const panel = new CapabilitiesPanel({ model, workspace, page, theme, tui: { terminal: { rows }, requestRender() {} }, kb: getKeybindings(), done() {} });
+  if (page === "resources") panel.handleInput("\x1bOQ"); // pending → all
+  if (page === "presets") panel.handleInput("\x1b[B"); // select web-dev
   let lines = panel.render(width);
-  const y = lines.findIndex((line) => /\[[x ]\]/.test(line) && line.includes("lark-doc"));
-  if (y >= 0) panel.handleMouse({ type: "click", button: "left", x: 15, y, screenX: 15, screenY: y,
-    width, height: rows, shift: false, alt: false, ctrl: false });
+  const y = page === "resources" ? lines.findIndex((line) => /\[[x ]\]/.test(line) && line.includes("lark-doc")) : -1;
+  if (y >= 0) {
+    const prefix = lines[y].indexOf("lark-doc");
+    const x = visibleWidth(lines[y].slice(0, prefix)) + 1;
+    panel.handleMouse({ type: "click", button: "left", x, y, screenX: x, screenY: y,
+      width, height: rows, shift: false, alt: false, ctrl: false });
+  }
   if (label.includes("菜单")) panel.handleInput("\x1bOS");
   lines = panel.render(width);
-  writeFileSync(join(directory, `${screens.length}.txt`), lines.join("\n"));
+  writeFileSync(join(directory, `${id}.txt`), lines.join("\n"));
   screens.push(`<section id="screen-${screens.length}"><h2>${escape(label)} · ${width} 列 × ${rows} 行</h2>${svg(lines, width, colors, name === "dark" ? "#202027" : "#ffffff")}</section>`);
 }
 const html = `<!doctype html><meta charset="utf-8"><title>Pi panel visual QA</title><style>body{margin:32px;background:#e8e8ed;color:#282831;font:14px system-ui}h1{font-size:20px}h2{font-size:14px;font-weight:500;color:#555}section{margin:24px 0}svg{display:block;max-width:100%;height:auto;border-radius:8px;box-shadow:0 8px 24px #0001}</style><h1>原生面板渲染预览</h1><p>由实际 render() 输出和 Pi 内置主题生成；使用示例数据，不是运行中的终端截图。</p>${screens.join("")}`;
 const path = join(directory, "index.html");
 writeFileSync(path, html);
-for (const [index, name] of ["dark", "light", "narrow", "batch"].entries()) {
-  writeFileSync(join(directory, `${name}.html`), html.replace(screens.join(""), screens[index]));
+for (const [index, { id }] of cases.entries()) {
+  writeFileSync(join(directory, `${id}.html`), html.replace(screens.join(""), screens[index]));
 }
 console.log(JSON.stringify({ path, url: pathToFileURL(path).href, screens: cases.length }));

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getKeybindings, visibleWidth, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { CapabilitiesPanel } from "../src/panel.ts";
+import { CapabilitiesPanel, type PanelPage, type PanelResult } from "../src/panel.ts";
+import type { Workspace } from "../src/presets.ts";
 import { type ProjectModel, type ResourceRow } from "../src/model.ts";
 
 function resource(name: string, options: Partial<ResourceRow> = {}): ResourceRow {
@@ -10,15 +11,16 @@ function resource(name: string, options: Partial<ResourceRow> = {}): ResourceRow
     group: "全局 Skills", state: "inherit", initial: "inherit", inheritedEnabled: true, editable: true, ...options };
 }
 function setup(rows = [resource("中文测试技能"), resource("web", { source: "项目", group: "项目 Skills" }),
-  resource("docs", { id: "mcp:docs", kind: "mcp", description: "文档服务", source: "全局 mcp.json", group: "全局 MCP" })]) {
+  resource("docs", { id: "mcp:docs", kind: "mcp", description: "文档服务", source: "全局 mcp.json", group: "全局 MCP" })],
+  page: PanelPage = "resources", workspace?: Workspace) {
   const file = { path: "/project/.pi/config.json", text: undefined, data: {} };
   const model: ProjectModel = { cwd: "D:/中文项目", settings: file, mcp: file, globalSettings: file, globalMcp: file, rows };
-  let result: string | undefined;
+  let result: PanelResult | undefined;
   const terminal = { rows: 30 };
   const tui = { terminal, requestRender() {} } as unknown as TUI;
   const theme = { fg: (_color: string, value: string) => value, bg: (_color: string, value: string) => value,
     bold: (value: string) => value } as Theme;
-  const panel = new CapabilitiesPanel({ model, tui, theme, kb: getKeybindings(), done(value) { result = value; } });
+  const panel = new CapabilitiesPanel({ model, workspace, page, tui, theme, kb: getKeybindings(), done(value) { result = value; } });
   return { model, panel, terminal, result: () => result };
 }
 function click(panel: CapabilitiesPanel, x: number, y: number) {

@@ -1,9 +1,12 @@
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
 import { defineTool, withFileMutationQueue, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertProjectUnchanged, dirtyRows, saveProject, type ProjectModel, type Override } from "./model.ts";
 import { ProposalStore, resourceId, resourceSummary, stageChanges } from "./proposals.ts";
 
 export const REVIEW_HINT = "建议尚未保存。请展示完整方案并等待用户在后续对话中明确确认，再用 apply 应用；也可打开 /switch 手动保存。";
+
+// Some providers require every property; null represents an omitted optional argument.
+const optionalArgument = <T extends TSchema>(schema: T) => Type.Optional(Type.Union([Type.Null(), schema]));
 
 function ensureInteractiveProject(ctx: ExtensionContext): void {
   if (ctx.mode !== "tui") throw new Error("对话建议和应用需要 Pi 交互终端。未修改任何配置。");
@@ -23,7 +26,7 @@ export function createCapabilitiesTool(options: {
   return defineTool({
     name: "pi_switch",
     label: "能力开关",
-    description: "List project Skills/native MCP metadata, stage reasoned suggestions, then apply the staged proposal only after explicit user confirmation in a later message. List first for exact resource IDs. Use the latest proposalId for apply; optional ids select a confirmed subset, omitted ids apply all pending items. Unselected suggestions remain pending. Paginated results; follow nextOffset. MCP connection is unknown, not inferred from enabled state.",
+    description: "List project Skills/native MCP metadata, stage reasoned suggestions, then apply the staged proposal only after explicit user confirmation in a later message. List first for exact resource IDs. Use the latest proposalId for apply; optional ids select a confirmed subset, omitted ids apply all pending items. Unselected suggestions remain pending. Paginated results; follow nextOffset. MCP connection is unknown, not inferred from enabled state. Omit unused arguments or pass null; never fill them with placeholder IDs, changes or filter values.",
     promptSnippet: "查看项目 Skills/MCP，先给建议；用户在对话中确认后直接应用，自动重载。",
     promptGuidelines: [
       "When the user asks to curate, enable, disable or simplify project Skills/MCP, use pi_switch list and stage instead of editing configuration directly. Base suggestions on the user's task and read-only project inspection; do not run setup scripts or read secrets for classification. Leave uncertain resources unchanged.",
@@ -34,16 +37,16 @@ export function createCapabilitiesTool(options: {
     annotations: { destructiveHint: false, openWorldHint: false },
     parameters: Type.Object({
       action: Type.String({ enum: ["list", "stage", "apply"] }),
-      query: Type.Optional(Type.String({ maxLength: 200, description: "list: substring of name, description or source" })),
-      kind: Type.Optional(Type.String({ enum: ["skill", "mcp"] })),
-      pendingOnly: Type.Optional(Type.Boolean()),
-      offset: Type.Optional(Type.Integer({ minimum: 0 })),
-      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 40 })),
-      proposalId: Type.Optional(Type.String({ minLength: 1, maxLength: 80, description: "apply: latest proposalId returned by list or stage" })),
-      ids: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), {
+      query: optionalArgument(Type.String({ maxLength: 200, description: "list: substring of name, description or source" })),
+      kind: optionalArgument(Type.String({ enum: ["skill", "mcp"] })),
+      pendingOnly: optionalArgument(Type.Boolean()),
+      offset: optionalArgument(Type.Integer({ minimum: 0 })),
+      limit: optionalArgument(Type.Integer({ minimum: 1, maximum: 40 })),
+      proposalId: optionalArgument(Type.String({ minLength: 1, maxLength: 80, description: "apply: latest proposalId returned by list or stage" })),
+      ids: optionalArgument(Type.Array(Type.String({ minLength: 1, maxLength: 80 }), {
         minItems: 1, maxItems: 200, description: "apply: only the pending resource IDs explicitly confirmed by the user; omit for the entire proposal",
       })),
-      changes: Type.Optional(Type.Array(Type.Object({
+      changes: optionalArgument(Type.Array(Type.Object({
         id: Type.String({ minLength: 1, maxLength: 80 }),
         state: Type.String({ enum: ["inherit", "on", "off"] }),
         reason: Type.String({ minLength: 1, maxLength: 500 }),
@@ -72,11 +75,12 @@ export function createCapabilitiesTool(options: {
           nextStep: REVIEW_HINT };
         ctx.ui.notify(`已暂存 ${pending.length} 项能力修改，等待对话确认或 /switch 复核。`, "info");
       } else if (params.action === "apply") {
-        if (params.changes || params.query !== undefined || params.kind !== undefined
-          || params.pendingOnly !== undefined || params.offset !== undefined || params.limit !== undefined) {
+        if (params.changes != null || params.query != null || params.kind != null
+          || params.pendingOnly != null || params.offset != null || params.limit != null) {
           throw new Error("apply 只接受 proposalId 和可选 ids，不能新增修改或通过 list 筛选条件选择范围。");
         }
-        options.store.assertConfirmation(params.proposalId, userMessageId);
+        const proposalId = params.proposalId ?? undefined;
+        options.store.assertConfirmation(proposalId, userMessageId);
         const pending = dirtyRows(model);
         const byId = new Map(pending.map((row) => [resourceId(row), row]));
         const ids = params.ids ?? [...byId.keys()];
@@ -90,7 +94,7 @@ export function createCapabilitiesTool(options: {
           if (latestUserMessageId(ctx) !== userMessageId) {
             throw new Error("等待保存期间用户消息已改变，请重新核对当前请求后再应用。");
           }
-          options.store.assertConfirmation(params.proposalId, userMessageId);
+          options.store.assertConfirmation(proposalId, userMessageId);
           try { assertProjectUnchanged(model); }
           catch {
             options.store.clear();
