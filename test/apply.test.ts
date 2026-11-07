@@ -11,6 +11,8 @@ import { DefaultPackageManager, SettingsManager, loadSkills, withFileMutationQue
   type ExtensionToolContext, type RegisteredCommand, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import piSwitch from "../src/index.ts";
 import { createCapabilitiesTool } from "../src/tool.ts";
+import { presetPath } from "../src/presets.ts";
+import { getKeybindings, visibleWidth, type Component, type TuiMouseEvent } from "@earendil-works/pi-tui";
 
 type ListedItem = { id: string; name: string; savedSetting: string; proposedSetting: string; pending: boolean };
 
@@ -123,6 +125,7 @@ function fixture() {
   };
   return { agent, ctx, run, strictRun, user, stage, settle, flushReload, nativeSkill, assertGlobals,
     settings, mcp, entries, notifications, dispatches, statuses, reloads: () => reloads,
+    openPanel: () => command.handler("", ctx), emit: (name: string, event: unknown = {}) => handlers.get(name)?.(event, ctx),
     setReloadFailure() { failReload = true; } };
 }
 
@@ -334,4 +337,222 @@ test("reload failure reports saved configuration separately from failed activati
   assert.ok(f.notifications.some((message) => message.includes("配置已保存，但重新加载失败")));
   assert.ok(!f.notifications.some((message) => message.includes("已保存并重新加载")));
   assert.equal(JSON.parse(readFileSync(f.mcp, "utf8")).mcpServers["fixture-docs"].enabled, false);
+}));
+
+async function stageTemplate(f: ReturnType<typeof fixture>, agentsMd = "Prefer small changes.\nRun project checks.") {
+  const list = await f.strictRun({ action: "list", query: "fixture-" });
+  return f.strictRun({ action: "preset_stage", name: "web-dev", agentsMd,
+    changes: list.items.map((row: ListedItem) => ({ id: row.id, state: "off", reason: "模板暂不需要" })) });
+}
+
+test("conversation drafts and saves a template without project changes, then applies it after separate confirmation", () => withFixture(async (f) => {
+  const agents = join(f.ctx.cwd, "AGENTS.md");
+  writeFileSync(agents, "# Project private instructions\nKeep project prose.\n");
+  const first = await stageTemplate(f);
+  const path = presetPath(f.agent, "web-dev");
+  assert.equal(existsSync(path), false);
+  assert.equal((await f.run({ action: "list", pendingOnly: true })).pendingCount, 0);
+  const preview = await f.strictRun({ action: "preset_show", proposalId: first.proposalId });
+  assert.equal(preview.operation, "save");
+  assert.equal(preview.agentsMd.text, "Prefer small changes.\nRun project checks.");
+  assert.ok(preview.resources.items.every((item: { enabled: boolean }) => !item.enabled));
+  assert.ok(!JSON.stringify(preview).includes("Project private instructions"));
+  await assert.rejects(f.strictRun({ action: "preset_save", proposalId: first.proposalId }), /后续消息/);
+  f.user("确认保存模板，不应用项目");
+  await assert.rejects(f.strictRun({ action: "preset_apply", proposalId: first.proposalId }), /操作不匹配/);
+  const saved = await f.strictRun({ action: "preset_save", proposalId: first.proposalId });
+  assert.equal(saved.projectChanged, false);
+  assert.equal(saved.reload, "not-needed");
+  assert.equal(existsSync(f.settings), false);
+  assert.equal(existsSync(f.mcp), false);
+  assert.equal(readFileSync(agents, "utf8"), "# Project private instructions\nKeep project prose.\n");
+  await f.settle(); assert.equal(f.dispatches.length, 0);
+  assert.equal((await f.strictRun({ action: "preset_list" })).items[0].name, "web-dev");
+  const applying = await f.strictRun({ action: "preset_preview", name: "web-dev" });
+  await assert.rejects(f.strictRun({ action: "preset_apply", proposalId: applying.proposalId }), /后续消息/);
+  f.user("确认把模板应用到当前项目");
+  const applied = await f.strictRun({ action: "preset_apply", proposalId: applying.proposalId });
+  assert.equal(applied.projectChanged, true);
+  assert.equal(applied.rules, 1);
+  assert.equal(applied.reload, "scheduled");
+  assert.equal(await f.nativeSkill("fixture-ai"), false);
+  assert.equal(await f.nativeSkill("fixture-sibling"), false);
+  assert.ok(readFileSync(agents, "utf8").startsWith("# Project private instructions\nKeep project prose.\n"));
+  for (const secret of ["PRIVATE_AUTH", "PRIVATE_SKILL_BODY", "private.invalid"]) {
+    assert.ok(!JSON.stringify({ preview, saved, applied, file: readFileSync(path, "utf8"), receipts: f.entries.filter((entry) => entry.type === "custom") }).includes(secret));
+  }
+  await f.settle(); await f.flushReload();
+  assert.equal(f.reloads(), 1);
+  assert.ok(f.notifications.some((message) => message.includes("通用规则已更新")));
+  const again = await f.run({ action: "preset_preview", name: "web-dev" });
+  f.user();
+  const noOp = await f.run({ action: "preset_apply", proposalId: again.proposalId });
+  assert.equal(noOp.changed, false);
+  assert.equal(noOp.reload, "not-needed");
+}));
+
+test("template revisions preserve earlier edits and require fresh confirmation; empty rules and inherit remove content", () => withFixture(async (f) => {
+  const first = await stageTemplate(f, "Original rules");
+  const one = (await f.run({ action: "list", query: "fixture-ai" })).items[0];
+  f.user("调整模板，先别保存");
+  const second = await f.strictRun({ action: "preset_stage", name: "web-dev", changes: [{ id: one.id, state: "on", reason: "保留该技能" }] });
+  let view = await f.run({ action: "preset_show" });
+  assert.equal(view.agentsMd.text, "Original rules");
+  assert.equal(view.resources.items.find((item: { name: string }) => item.name === "fixture-ai").enabled, true);
+  assert.equal(view.resources.items.find((item: { name: string }) => item.name === "fixture-docs").enabled, false);
+  await assert.rejects(f.run({ action: "preset_save", proposalId: first.proposalId }), /方案版本/);
+  await assert.rejects(f.run({ action: "preset_save", proposalId: second.proposalId }), /后续消息/);
+  f.user("确认保存");
+  await f.run({ action: "preset_save", proposalId: second.proposalId });
+  const third = await f.strictRun({ action: "preset_stage", name: "web-dev", agentsMd: "",
+    changes: [{ id: one.id, state: "inherit", reason: "不在模板中管理" }] });
+  assert.equal(third.overwrites, true);
+  view = await f.run({ action: "preset_show" });
+  assert.equal(view.agentsMd.text, "");
+  assert.ok(!view.resources.items.some((item: { name: string }) => item.name === "fixture-ai"));
+  f.user(); await f.run({ action: "preset_save", proposalId: third.proposalId });
+  assert.equal((await f.run({ action: "preset_show", name: "web-dev" })).agentsMd.text, "");
+  assert.equal(existsSync(f.settings), false);
+}));
+
+test("template saving preserves existing project suggestions and template application refuses to discard them", () => withFixture(async (f) => {
+  const project = await f.stage();
+  const draft = await f.run({ action: "preset_stage", name: "with-pending", agentsMd: "Shared rules" });
+  f.user("只保存模板"); await f.run({ action: "preset_save", proposalId: draft.proposalId });
+  const pending = await f.run({ action: "list", pendingOnly: true });
+  assert.equal(pending.proposalId, project.proposalId);
+  assert.equal(pending.pendingCount, 2);
+  await assert.rejects(f.run({ action: "preset_preview", name: "with-pending" }), /待修改/);
+  assert.equal(existsSync(f.settings), false);
+  assert.equal(f.dispatches.length, 0);
+}));
+
+test("external template or AGENTS changes invalidate confirmed actions before any project write", () => withFixture(async (f) => {
+  const first = await stageTemplate(f);
+  const path = presetPath(f.agent, "web-dev");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ version: 1, resources: [], agentsMd: "Written outside" }));
+  f.user();
+  await assert.rejects(f.run({ action: "preset_save", proposalId: first.proposalId }), /已失效/);
+  assert.ok(readFileSync(path, "utf8").includes("Written outside"));
+  assert.equal((await f.run({ action: "preset_list" })).draft, null);
+  const applying = await f.run({ action: "preset_preview", name: "web-dev" });
+  writeFileSync(join(f.ctx.cwd, "AGENTS.md"), "Changed after preview");
+  f.user();
+  await assert.rejects(f.run({ action: "preset_apply", proposalId: applying.proposalId }), /已失效/);
+  assert.equal(existsSync(f.settings), false);
+  assert.equal(existsSync(f.mcp), false);
+  assert.equal(readFileSync(join(f.ctx.cwd, "AGENTS.md"), "utf8"), "Changed after preview");
+}));
+
+test("template drafts do not survive branch, project, session or runtime changes", () => withFixture(async (f) => {
+  let draft = await stageTemplate(f);
+  await f.emit("session_tree");
+  await assert.rejects(f.run({ action: "preset_save", proposalId: draft.proposalId }), /没有模板草稿/);
+  draft = await stageTemplate(f);
+  f.ctx.sessionManager.getSessionId = () => "another-session";
+  assert.equal((await f.run({ action: "preset_list" })).draft, null);
+  draft = await stageTemplate(f);
+  const cwd = f.ctx.cwd;
+  f.ctx.cwd = join(cwd, "subproject"); mkdirSync(f.ctx.cwd);
+  assert.equal((await f.run({ action: "preset_list" })).draft, null);
+  f.ctx.cwd = cwd;
+  draft = await stageTemplate(f);
+  await f.ctx.reload();
+  await assert.rejects(f.run({ action: "preset_show", proposalId: draft.proposalId }), /没有模板草稿/);
+  assert.equal(existsSync(presetPath(f.agent, "web-dev")), false);
+}));
+
+test("template actions reject irrelevant arguments and invalid names; cancellation and discard cannot write", () => withFixture(async (f) => {
+  const draft = await stageTemplate(f);
+  for (const args of [
+    { action: "preset_save", proposalId: draft.proposalId, agentsMd: "unreviewed" },
+    { action: "preset_apply", proposalId: draft.proposalId, name: "another" },
+    { action: "preset_show", name: "web-dev", changes: [] },
+    { action: "preset_list", pendingOnly: false },
+    { action: "apply", proposalId: draft.proposalId, agentsMd: "unreviewed" },
+    { action: "preset_stage", name: "../outside" },
+    { action: "preset_stage", name: "web-dev", agentsMd: "x".repeat(65537) },
+  ]) await assert.rejects(f.run(args));
+  f.user();
+  await assert.rejects(f.run({ action: "preset_save", proposalId: draft.proposalId }, AbortSignal.abort()));
+  assert.equal(existsSync(presetPath(f.agent, "web-dev")), false);
+  await assert.rejects(f.run({ action: "preset_discard", proposalId: "stale" }), /proposalId/);
+  assert.equal((await f.strictRun({ action: "preset_discard", proposalId: draft.proposalId })).discarded, true);
+  await assert.rejects(f.run({ action: "preset_save", proposalId: draft.proposalId }), /没有模板草稿/);
+}));
+
+test("long template rules and resource lists remain fully recoverable through bounded pages", () => withFixture(async (f) => {
+  const rules = "规则内容包含中文和🌐，请保留完整文本。\n".repeat(180);
+  const draft = await stageTemplate(f, rules);
+  let offset = 0, textOffset = 0, text = "";
+  const names = new Set<string>();
+  while (true) {
+    const view = await f.strictRun({ action: "preset_show", proposalId: draft.proposalId, limit: 1, offset, textOffset });
+    assert.ok(Buffer.byteLength(JSON.stringify(view)) < 30000);
+    for (const item of view.resources.items) names.add(item.name);
+    text += view.agentsMd.text;
+    if (view.resources.nextOffset === null && view.agentsMd.nextOffset === null) break;
+    offset = view.resources.nextOffset ?? view.resources.total;
+    textOffset = view.agentsMd.nextOffset ?? view.agentsMd.total;
+  }
+  assert.equal(text, rules.trim());
+  assert.ok(names.has("fixture-ai") && names.has("fixture-docs"));
+  assert.equal(existsSync(f.settings), false);
+}));
+
+for (const action of ["preset_save", "preset_apply"] as const) {
+  test(`${action} rechecks the latest user message after waiting for file mutation locks`, () => withFixture(async (f) => {
+    let draft = await stageTemplate(f);
+    if (action === "preset_apply") {
+      f.user(); await f.run({ action: "preset_save", proposalId: draft.proposalId });
+      draft = await f.run({ action: "preset_preview", name: "web-dev" });
+    }
+    f.user();
+    let release!: () => void;
+    let ready!: () => void;
+    const locked = new Promise<void>((resolve) => { ready = resolve; });
+    const path = action === "preset_save" ? presetPath(f.agent, "web-dev") : f.settings;
+    const held = withFileMutationQueue(path, () => new Promise<void>((resolve) => { release = resolve; ready(); }));
+    await locked;
+    const rejected = assert.rejects(f.run({ action, proposalId: draft.proposalId }), /用户消息已改变/);
+    try { await setImmediate(); f.user("先别执行，还要调整"); } finally { release(); }
+    await held; await rejected;
+    assert.equal(existsSync(f.settings), false);
+    if (action === "preset_save") assert.equal(existsSync(path), false);
+    assert.equal(f.dispatches.length, 0);
+  }));
+}
+
+test("model-created template draft can be reviewed and saved from the workbench without changing the project", () => withFixture(async (f) => {
+  await stageTemplate(f);
+  let screens = 0;
+  f.ctx.ui.custom = (async (factory: (...args: any[]) => Component) => {
+    let result: unknown;
+    const panel = factory({ terminal: { rows: 38 }, requestRender() {} },
+      { fg: (_: string, text: string) => text, bg: (_: string, text: string) => text, bold: (text: string) => text },
+      getKeybindings(), (value: unknown) => { result = value; });
+    const lines = panel.render(144);
+    const click = (label: string) => {
+      const target = ` ${label} `;
+      const y = lines.findIndex((line) => line.includes(target));
+      assert.ok(y >= 0, lines.join("\n"));
+      const x = visibleWidth(lines[y].slice(0, lines[y].indexOf(target))) + 1;
+      panel.handleMouse?.({ type: "click", button: "left", x, y, screenX: x, screenY: y,
+        width: 144, height: 38, shift: false, alt: false, ctrl: false } as TuiMouseEvent);
+    };
+    if (screens === 0) {
+      assert.ok(lines.join("\n").includes("模型草稿"));
+      click("复核并保存模板");
+    } else if (screens === 1) click("保存模板");
+    else panel.handleInput?.("\u001b");
+    screens++;
+    return result;
+  }) as typeof f.ctx.ui.custom;
+  await f.openPanel();
+  assert.equal(screens, 3);
+  assert.ok(existsSync(presetPath(f.agent, "web-dev")));
+  assert.equal(existsSync(f.settings), false);
+  assert.equal(f.reloads(), 0);
+  assert.equal((await f.run({ action: "preset_list" })).draft, null);
 }));

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0]
+
+- Extend the existing `pi_switch` tool with preset listing, bounded inspection, draft creation and editing, confirmed saving, preview and confirmed project application, and draft discard.
+- Separate save-only templates from project initialization; validate proposal versions, later user messages, file conflicts, and project/session ownership before writes.
+- Show model-created drafts in the workbench for manual review without applying their resource choices to the project.
+- Keep templates free of MCP connection settings and Skill bodies; explicitly selected resources form new conversational presets, and shared rules have paginated previews.
+- Cover native tool validation, draft revisions, separate save/apply confirmations, isolation, concurrent user messages, and manual review flows.
+
 ## [0.5.0]
 
 - Refine the workbench with responsive sidebar navigation, project summaries, distinct action surfaces, and template cards with availability and resource counts.

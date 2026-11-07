@@ -30,8 +30,10 @@ export interface PresetItem {
   name: string;
   preset?: Preset;
   error?: string;
+  draft?: "save" | "apply";
 }
 export interface Workspace {
+  draft?: PresetItem;
   rules?: ProjectRules;
   rulesError?: string;
   presets: PresetItem[];
@@ -169,18 +171,21 @@ function planAgents(file: FileSnapshot, agentsMd?: string): FileWrite | undefine
   else if (block) text = `${current}${current ? (current.endsWith("\n") ? "\n" : "\n\n") : ""}${block}\n`;
   return text === current ? undefined : { file, text };
 }
-export function preparePreset(model: ProjectModel, input: Preset): PresetPlan {
-  const preset = validatePreset(input);
-  if (dirtyRows(model).length) throw new Error("请先保存或放弃待修改的能力开关，再初始化模板。");
-  const draft = structuredClone(model);
-  const selected = preset.resources.map((item) => {
-    const matches = draft.rows.filter((row) => row.kind === item.kind && row.name === item.name);
+export function validatePresetResources(model: ProjectModel, preset: Preset) {
+  return preset.resources.map((item) => {
+    const matches = model.rows.filter((row) => row.kind === item.kind && row.name === item.name);
     if (!matches.length) throw new Error(`缺少资源：${item.kind} ${item.name}。请先安装或配置，未应用任何修改。`);
     if (matches.length !== 1) throw new Error(`同名资源有歧义：${item.kind} ${item.name}。请先消除歧义。`);
     const row = matches[0];
     if (!row.editable) throw new Error(`${item.name} 是只读资源，请在来源扩展中管理。`);
     return { row, state: item.enabled ? "on" as const : "off" as const };
   });
+}
+export function preparePreset(model: ProjectModel, input: Preset): PresetPlan {
+  const preset = validatePreset(input);
+  if (dirtyRows(model).length) throw new Error("请先保存或放弃待修改的能力开关，再初始化模板。");
+  const draft = structuredClone(model);
+  const selected = validatePresetResources(draft, preset);
   const agents = readSnapshot(join(model.cwd, "AGENTS.md"));
   const override = readSnapshot(join(model.cwd, "AGENTS.override.md"));
   const agentsWrite = planAgents(agents, preset.agentsMd);

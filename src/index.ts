@@ -4,16 +4,20 @@ import { openWorkbench, type SaveCounts } from "./workbench.ts";
 import { ProposalStore, projectFingerprint, resourceId, stageChanges, type ProposedChange } from "./proposals.ts";
 import { createCapabilitiesTool, latestUserMessageId } from "./tool.ts";
 import { presetCompletions, runPresetCommand } from "./preset-command.ts";
+import { PresetDraftStore } from "./preset-drafts.ts";
 
 const STATUS_KEY = "pi-switch";
 const RECEIPT = "pi-switch-save";
 
 export default function piSwitch(pi: ExtensionAPI): void {
   const store = new ProposalStore();
+  const presetStore = new PresetDraftStore();
   let reloadRequested = false;
   const status = (ctx: ExtensionContext, model?: ProjectModel) => {
     const count = model ? dirtyRows(model).length : 0;
-    ctx.ui.setStatus(STATUS_KEY, count ? `能力开关 ${count} 项待复核 · /switch` : undefined);
+    const draft = presetStore.current;
+    ctx.ui.setStatus(STATUS_KEY, draft ? `模板 ${draft.name} 待${draft.operation === "save" ? "保存" : "应用"} · /switch`
+      : count ? `能力开关 ${count} 项待复核 · /switch` : undefined);
   };
   const load = async (ctx: ExtensionContext) => {
     try { return await loadProject(ctx.cwd, getAgentDir(), pi.getMcpServers()); }
@@ -26,7 +30,7 @@ export default function piSwitch(pi: ExtensionAPI): void {
       ...(pending.length ? { pending, fingerprint: projectFingerprint(model),
         proposalId: store.proposalId, userMessageId: latestUserMessageId(ctx) } : {}) });
   };
-  pi.registerTool(createCapabilitiesTool({ store, load, status,
+  pi.registerTool(createCapabilitiesTool({ store, presetStore, load, status,
     applied(ctx, model, counts) {
       receipt(ctx, model, counts);
       reloadRequested = true;
@@ -35,6 +39,7 @@ export default function piSwitch(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (event, ctx) => {
     store.clear();
+    presetStore.clear();
     reloadRequested = false;
     status(ctx);
     if (event.reason !== "reload") return;
@@ -64,6 +69,7 @@ export default function piSwitch(pi: ExtensionAPI): void {
   });
   pi.on("session_tree", (_event, ctx) => {
     store.clear();
+    presetStore.clear();
     reloadRequested = false;
     ctx.ui.setStatus(STATUS_KEY, undefined);
   });
@@ -101,20 +107,23 @@ export default function piSwitch(pi: ExtensionAPI): void {
       }
       try {
         const owner = `${ctx.cwd}\0${ctx.sessionManager.getSessionId()}`;
+        presetStore.use(owner);
         let model: ProjectModel;
         try { model = await store.get(owner, () => load(ctx)); }
-        catch (error) { status(ctx); throw error; }
+        catch (error) { presetStore.clear(); status(ctx); throw error; }
         if (args.trim()) {
           if (!await runPresetCommand(args, ctx, model)) return;
           store.clear();
+          presetStore.clear();
           status(ctx);
           try { await ctx.reload(); return; }
           catch { ctx.ui.notify("模板已保存到项目，但重新加载失败。请执行 /reload 或重启 Pi。", "error"); }
           return;
         }
-        const result = await openWorkbench(ctx, model);
+        const result = await openWorkbench(ctx, model, presetStore);
         store.clear();
-        ctx.ui.setStatus(STATUS_KEY, undefined);
+        if (result) presetStore.clear();
+        status(ctx);
         if (!result) return;
         if (result !== "initialized") receipt(ctx, model, result);
       } catch (error) {

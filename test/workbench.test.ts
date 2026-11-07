@@ -9,6 +9,7 @@ import { CapabilitiesPanel, type PanelPage, type PanelResult } from "../src/pane
 import type { ProjectModel } from "../src/model.ts";
 import { loadWorkspace, presetPath, readPreset, readSnapshot, type Workspace } from "../src/presets.ts";
 import { openWorkbench } from "../src/workbench.ts";
+import { PresetDraftStore } from "../src/preset-drafts.ts";
 
 const theme = { fg: (_: string, value: string) => value, bg: (_: string, value: string) => value,
   bold: (value: string) => value, italic: (value: string) => value,
@@ -257,8 +258,13 @@ test("invalid rules and individual templates remain visible without disabling re
 });
 
 async function driveWorkbench(steps: ((panel: Component, f: ReturnType<typeof fixture>) => void)[],
-  options: { rule?: string; afterEditor?: (f: ReturnType<typeof fixture>) => void } = {}) {
+  options: { rule?: string; afterEditor?: (f: ReturnType<typeof fixture>) => void; draft?: "save" | "apply" } = {}) {
   const f = fixture();
+  const drafts = new PresetDraftStore();
+  if (options.draft) {
+    const source = readSnapshot(presetPath(f.agent, "web-dev"));
+    drafts.stage(f.model, source, "web-dev", readPreset(source), options.draft, "draft-user");
+  }
   let index = 0;
   const messages: string[] = [];
   const old = process.env.PI_CODING_AGENT_DIR;
@@ -286,7 +292,7 @@ async function driveWorkbench(steps: ((panel: Component, f: ReturnType<typeof fi
     },
   } as unknown as ExtensionCommandContext;
   try {
-    const result = await openWorkbench(ctx, f.model);
+    const result = await openWorkbench(ctx, f.model, drafts);
     assert.equal(index, steps.length);
     return { ...f, result, messages };
   } finally {
@@ -344,6 +350,27 @@ test("rules changed outside the editor block the entire project save and leave t
   assert.ok(f.messages.some((message) => message.includes("已被修改")));
   assert.equal(readFileSync(join(f.cwd, "AGENTS.md"), "utf8"), "Changed outside");
   assert.equal(existsSync(f.model.settings.path), false);
+});
+
+test("a model application draft cannot overwrite unsaved rule edits made inside the workbench", async () => {
+  const f = await driveWorkbench([
+    (panel) => { click(panel, "项目规则"); click(panel, "编辑规则"); },
+    (panel) => { click(panel, "我的模板"); panel.handleInput?.("\u001b[18~"); },
+    (panel) => { click(panel, "放弃修改"); click(panel, "放弃修改"); },
+  ], { draft: "apply" });
+  assert.ok(f.messages.some((message) => message.includes("通用规则草稿")));
+  assert.equal(existsSync(f.model.settings.path), false);
+  assert.equal(readFileSync(join(f.cwd, "AGENTS.md"), "utf8"), f.projectText);
+});
+
+test("a model application draft can be manually reviewed and applied through the same snapshot checks", async () => {
+  const f = await driveWorkbench([
+    (panel) => click(panel, "复核并应用"),
+    (panel) => click(panel, "应用并重载"),
+  ], { draft: "apply" });
+  assert.equal(f.result, "initialized");
+  assert.ok(existsSync(f.model.settings.path));
+  assert.ok(readFileSync(join(f.cwd, "AGENTS.md"), "utf8").includes("Reusable rules"));
 });
 
 test("template initialization can be selected and confirmed with mouse clicks", async () => {

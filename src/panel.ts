@@ -9,7 +9,7 @@ import { readSnapshot, rulesChanged, type PresetItem, type Workspace } from "./p
 
 export type PanelPage = "overview" | "resources" | "rules" | "presets";
 export type PanelResult = "save" | "cancel" | {
-  action: "edit-rules" | "save-preset" | "apply-preset" | "update-preset";
+  action: "edit-rules" | "save-preset" | "apply-preset" | "update-preset" | "review-draft";
   page: PanelPage;
   name?: string;
 };
@@ -203,7 +203,7 @@ export class CapabilitiesPanel implements Component, Focusable {
     else if (matchesKey(data, "f6")) { if (this.workspace.rules) this.request("save-preset"); }
     else if (matchesKey(data, "f7") && this.page === "presets") {
       const item = this.currentPreset();
-      if (item && this.workspace.rules) this.request("update-preset", item.name);
+      if (item && this.workspace.rules) this.request(item.draft ? "review-draft" : "update-preset", item.name);
     }
     else if (PAGE_KEYS.some((key) => matchesKey(data, key))) {
       this.selectPage(PAGES[PAGE_KEYS.findIndex((key) => matchesKey(data, key))].id);
@@ -304,7 +304,8 @@ export class CapabilitiesPanel implements Component, Focusable {
       else if (this.kb.matches(data, "tui.select.pageDown")) this.movePreset(this.listHeight);
       else if (this.kb.matches(data, "tui.select.confirm")) {
         const item = this.currentPreset();
-        if (item?.preset && !this.pendingCount() && !this.presetIssues(item).length) this.request("apply-preset", item.name);
+        if (item?.draft) this.request("review-draft", item.name);
+        else if (item?.preset && !this.pendingCount() && !this.presetIssues(item).length) this.request("apply-preset", item.name);
       } else { this.presetInput.handleInput(data); this.presetIndex = 0; this.detailOffset = 0; }
     } else {
       if (matchesKey(data, "f3")) this.showProjectDocument();
@@ -418,6 +419,7 @@ export class CapabilitiesPanel implements Component, Focusable {
     const issues = this.presetIssues(item);
     const preset = item.preset;
     return [item.name,
+      ...(item.draft ? [`模型草稿 · 待${item.draft === "save" ? "保存模板（不会修改项目）" : "应用到项目"}`, ""] : []),
       ...(issues.length ? ["暂时无法初始化：", ...issues, ""] : ["本机资源齐全，可预览后初始化。", ""]),
       ...(preset ? ["能力组合", ...preset.resources.map((row) => `${row.kind === "skill" ? "Skill" : "MCP"} · ${row.name}：${enabledText(row.enabled)}`),
         "", "通用规则", preset.agentsMd || "（不包含规则）"] : []),
@@ -429,11 +431,14 @@ export class CapabilitiesPanel implements Component, Focusable {
     if (!item) return this.scrollContent(this.documentLines(this.workspace.presetsError
       ?? (this.workspace.presets.length ? "没有匹配的模板，试试其他关键词。" : "还没有个人模板。先选择能力并编辑规则，再点击“保存为模板”。"), width), width, height);
     const actions = this.buttons([
-      { label: "应用到项目", primary: true, disabled: Boolean(this.pendingCount() || this.presetIssues(item).length || !item.preset), run: () => this.request("apply-preset", item.name) },
+      ...(item.draft ? [{ label: item.draft === "save" ? "复核并保存模板" : "复核并应用", primary: true,
+        disabled: item.draft === "apply" && Boolean(this.pendingCount()), run: () => this.request("review-draft", item.name) }] : [
+        { label: "应用到项目", primary: true, disabled: Boolean(this.pendingCount() || this.presetIssues(item).length || !item.preset), run: () => this.request("apply-preset", item.name) },
+        { label: "更新此模板", disabled: !this.workspace.rules, run: () => this.request("update-preset", item.name) },
+      ]),
       { label: "查看全文", run: () => { this.document = { title: `模板 ${item.name} · 只读`, content: this.presetContent(item) }; this.open("document"); } },
-      { label: "更新此模板", disabled: !this.workspace.rules, run: () => this.request("update-preset", item.name) },
     ], width);
-    const lines = [...actions.lines, this.theme.fg("dim", this.pendingCount()
+    const lines = [...actions.lines, this.theme.fg("dim", item.draft ? "模型模板草稿尚未保存，可在此完整复核。" : this.pendingCount()
       ? "请先保存或放弃待修改项，再初始化模板。" : "选择模板查看内容，应用前会展示完整预览。")];
     const available = Math.max(1, height - lines.length);
     const wide = width >= 86 && available >= 9;
@@ -447,7 +452,7 @@ export class CapabilitiesPanel implements Component, Focusable {
     for (const [offset, value] of items.slice(start, start + visibleItems).entries()) {
       const selected = start + offset === this.presetIndex;
       const issues = this.presetIssues(value);
-      const status = value.error ? "异常" : issues.length ? "缺失" : "就绪";
+      const status = value.draft ? "草稿" : value.error ? "异常" : issues.length ? "缺失" : "就绪";
       const name = `${selected ? "›" : " "} ${text(value.name)}`;
       const label = wide ? this.heading(name, this.theme.fg(issues.length ? "warning" : "success", status), listWidth)
         : `${name}${issues.length ? ` · ${status}` : ""}`;
@@ -465,6 +470,7 @@ export class CapabilitiesPanel implements Component, Focusable {
     const detailWidth = wide ? width - listWidth - 3 : width;
     const issues = this.presetIssues(item);
     const detailLines = [this.theme.bold(text(item.name)),
+      ...(item.draft ? [this.theme.fg("warning", `模型草稿 · 待${item.draft === "save" ? "保存模板" : "应用项目"}`), ""] : []),
       this.theme.fg(issues.length ? "warning" : "success", issues.length ? "暂时无法初始化" : "● 本机资源齐全，可预览后初始化。"),
       ...issues.flatMap((issue) => wrapTextWithAnsi(text(issue), detailWidth)), "",
       this.theme.fg("muted", "能力组合"),

@@ -2,7 +2,8 @@ import { join } from "node:path";
 import { getAgentDir, withFileMutationQueue, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { assertUnchanged, dirtyRows, saveProject, type ProjectModel } from "./model.ts";
 import { CapabilitiesPanel, type PanelPage, type PanelResult } from "./panel.ts";
-import { runPresetCommand, savePresetWithPreview } from "./preset-command.ts";
+import { confirmPreview, runPresetCommand, savePresetWithPreview } from "./preset-command.ts";
+import { PresetDraftStore } from "./preset-drafts.ts";
 import { loadWorkspace, projectRulesWrite, readSnapshot, rulesChanged, validatePreset } from "./presets.ts";
 
 export interface SaveCounts { skills: number; mcp: number; rules?: number; }
@@ -13,10 +14,22 @@ function ensureReady(ctx: ExtensionCommandContext, model: ProjectModel): void {
   }
 }
 
-export async function openWorkbench(ctx: ExtensionCommandContext, model: ProjectModel): Promise<SaveCounts | "initialized" | undefined> {
+export async function openWorkbench(ctx: ExtensionCommandContext, model: ProjectModel,
+  drafts?: PresetDraftStore): Promise<SaveCounts | "initialized" | undefined> {
   ensureReady(ctx, model);
   const workspace = loadWorkspace(model.cwd, getAgentDir());
-  let page: PanelPage = dirtyRows(model).length ? "resources" : "overview";
+  const refreshTemplates = () => {
+    const fresh = loadWorkspace(model.cwd, getAgentDir());
+    workspace.draft = drafts?.item;
+    workspace.presets = workspace.draft ? [workspace.draft, ...fresh.presets.filter((item) => item.name !== workspace.draft!.name)] : fresh.presets;
+    workspace.presetsError = fresh.presetsError;
+  };
+  if (drafts?.current) {
+    try { drafts.checked(model); }
+    catch (error) { ctx.ui.notify(error instanceof Error ? error.message : "模板草稿已失效。", "warning"); }
+  }
+  refreshTemplates();
+  let page: PanelPage = workspace.draft ? "presets" : dirtyRows(model).length ? "resources" : "overview";
   while (true) {
     ensureReady(ctx, model);
     const result = await ctx.ui.custom<PanelResult>((tui, theme, kb, done) =>
@@ -43,6 +56,25 @@ export async function openWorkbench(ctx: ExtensionCommandContext, model: Project
           mcp: changes.filter((row) => row.kind === "mcp").length, rules: Number(Boolean(ruleWrite)) };
       }
       page = result.page;
+      if (result.action === "review-draft") {
+        const draft = drafts?.checked(model);
+        if (!draft || result.name !== draft.name) throw new Error("模板草稿已改变，请重新选择。");
+        if (draft.operation === "apply" && rulesChanged(workspace)) throw new Error("请先保存或放弃通用规则草稿，再应用模板。");
+        const preview = [
+          draft.operation === "save" ? `只保存模板${draft.source.text === undefined ? "" : "，将覆盖同名模板"}，不修改当前项目。` : "将此模板应用到当前项目，保留 AGENTS.md 中的项目说明。",
+          ...draft.preset.resources.map((item) => `${item.kind} · ${item.name}：${item.enabled ? "开启" : "关闭"}`),
+          "", "通用规则：", draft.preset.agentsMd ?? "（不包含规则；应用时将移除旧模板规则区块）",
+        ].join("\n");
+        if (!await confirmPreview(ctx, `复核模型模板 · ${draft.name}`, preview, draft.operation === "save" ? "保存模板" : "应用并重载")) continue;
+        const commit = () => { ensureReady(ctx, model); return drafts!.commit(model, draft); };
+        const changed = draft.operation === "save" ? await withFileMutationQueue(draft.source.path, async () => commit())
+          : await withFileMutationQueue(model.settings.path, () => withFileMutationQueue(model.mcp.path, () =>
+            withFileMutationQueue(draft.plan!.agents.path, () => withFileMutationQueue(draft.source.path, async () => commit()))));
+        ctx.ui.notify(draft.operation === "save" ? `已保存模板 ${draft.name}，项目未修改。` : changed ? "模板已应用，正在重新加载。" : "项目已符合模板，无需修改。", "info");
+        if (changed && draft.operation === "apply") return "initialized";
+        refreshTemplates();
+        continue;
+      }
       if (result.action === "edit-rules") {
         const rules = workspace.rules;
         if (!rules) throw new Error(workspace.rulesError ?? "无法读取项目规则。");
@@ -65,10 +97,9 @@ export async function openWorkbench(ctx: ExtensionCommandContext, model: Project
           : await ctx.ui.input("保存当前选择为模板", "例如 web-dev、research、writing");
         if (name) await savePresetWithPreview(ctx, model, name.trim(), rules.file, rules.value);
       }
-      const fresh = loadWorkspace(model.cwd, getAgentDir());
-      workspace.presets = fresh.presets;
-      workspace.presetsError = fresh.presetsError;
+      refreshTemplates();
     } catch (error) {
+      refreshTemplates();
       ctx.ui.notify(error instanceof Error ? error.message : "操作失败，未保存项目修改。", "error");
     }
   }
