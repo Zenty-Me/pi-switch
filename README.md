@@ -2,6 +2,8 @@
 
 在 Pi 内打开统一管理界面，选择 Skills / MCP、编辑项目通用规则、保存和应用初始化模板。也可与 Pi 当前模型对话，确认建议后直接应用。
 
+[界面预览](#界面预览) · [安装](#安装) · [常用流程](#界面操作) · [项目模板](#项目初始化模板) · [开发验证](#开发验证)
+
 需要 Pi **1.5.0 或更新的 1.x 版本**、Node.js **22.19.0+**；开发验证使用 Pi 1.5.0、Node.js 24。支持原生 Windows、macOS、Linux 路径。
 
 ## 安装
@@ -31,6 +33,23 @@ pi install --local git:github.com/Zenty-Me/pi-switch
 ```
 
 项目需要通过 Pi 原生信任流程。面板在 Pi 空闲时打开；对话建议由模型在当前任务中调用工具准备。
+
+## 界面预览
+
+下面的画面来自面板实际 `render()` 输出，使用示例资源和 Pi 内置主题生成，方便快速了解四个主要区域。截图中的项目名、资源和模板均为演示数据。
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/overview.svg" alt="Pi Switch 项目概览" /></td>
+    <td><img src="docs/screenshots/resources.svg" alt="Pi Switch Skills 和 MCP 能力配置" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/rules.svg" alt="Pi Switch 项目规则编辑" /></td>
+    <td><img src="docs/screenshots/presets.svg" alt="Pi Switch 模板库" /></td>
+  </tr>
+</table>
+
+运行 `npm run preview` 可以重新生成同一套示例预览；它不读取本机个人资源配置，也不会连接真实 MCP 服务。
 
 ## 界面操作
 
